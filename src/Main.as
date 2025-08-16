@@ -42,74 +42,57 @@ int FindNext(const string &in lname, const string &in lq, int start) {
     return -1;
 }
 
-int BuildColoredLabelAndFirstPos(const string &in name, const string &in query, string &out label) {
-    int qn = int(query.Length);
-    if (qn <= 0) { label = "\\$ccc" + name; return 0; }
-
-    string lname = name.ToLower();
-    string lq = query.ToLower();
-
-    int firstPos = -1;
-    int cursor = 0;
-    label = "";
-
-    while (true) {
-        int pos = FindNext(lname, lq, cursor);
-        if (pos < 0) break;
-
-        if (firstPos < 0) firstPos = pos;
-        if (pos > cursor) { label += "\\$ccc" + name.SubStr(cursor, pos - cursor); }
-
-        label += "\\$fff" + name.SubStr(pos, qn);
-        cursor = pos + qn;
+string LowerNoSpaces(const string &in s) {
+    string res = "";
+    for (uint i = 0; i < uint(s.Length); i++) {
+        string c = s.SubStr(i, 1);
+        if (c != " " && c != "\t") res += c.ToLower();
     }
-
-    if (cursor < int(name.Length)) { label += "\\$ccc" + name.SubStr(cursor); }
-    if (firstPos < 0) { label = "\\$ccc" + name; }
-
-    return firstPos;
+    return res;
 }
 
-void FindMatches(const string  &in  query,
-                 array<string> &out names,
-                 array<uint>   &out idxs,
-                 array<int>    &out firstPos,
-                 array<string> &out lowerNames,
-                 array<string> &out labels)
-{
-    names.RemoveRange(0, names.Length);
-    idxs.RemoveRange(0, idxs.Length);
-    firstPos.RemoveRange(0, firstPos.Length);
-    lowerNames.RemoveRange(0, lowerNames.Length);
-    labels.RemoveRange(0, labels.Length);
+bool IsInitialBoundary(const string &in name, int i) {
+    if (i <= 0) return true;
+    string prev = name.SubStr(i - 1, 1);
+    string ch = name.SubStr(i, 1);
+    bool prevIsWS = (prev == " " || prev == "\t");
+    bool chIsUpper = (ch != ch.ToLower());
+    return prevIsWS || chIsUpper;
+}
 
-    bool showAll = query.Length == 0;
-    string lq = query.ToLower();
+void BuildInitials(const string &in name, string &out initials, array<int> &out pos) {
+    initials = "";
+    pos.RemoveRange(0, pos.Length);
+    for (int i = 0; i < int(name.Length); i++) {
+        if (!IsInitialBoundary(name, i)) continue;
+        string ch = name.SubStr(i, 1);
+        if (ch == " " || ch == "\t") continue;
+        initials += ch.ToUpper();
+        pos.InsertLast(i);
+    }
+}
 
-    for (uint i = 0; i < g_Plugins.Length; i++) {
-        Meta::Plugin@ p = g_Plugins[i];
-        string name = p.Name;
-        string low = name.ToLower();
-
-        int fpos = 0;
-        string lbl;
-
-        if (showAll) {
-            lbl  = "\\$ccc" + name;
-            fpos = 0;
-        } else {
-            int pos = FindNext(low, lq, 0);
-            if (pos < 0) continue;
-            fpos = BuildColoredLabelAndFirstPos(name, query, lbl);
-        }
-
-        names.InsertLast(name);
-        idxs.InsertLast(i);
-        firstPos.InsertLast(fpos);
-        lowerNames.InsertLast(low);
-        labels.InsertLast(lbl);
+string BuildLabelFromPositions(const string &in name, const array<int> &in matchPositions, int matchCount) {
+    int n = int(name.Length);
+    array<bool> isHit(uint(n));
+    for (int k = 0; k < matchCount && k < int(matchPositions.Length); k++) {
+        int p = matchPositions[k];
+        if (p >= 0 && p < n) isHit[uint(p)] = true;
     }
 
+    string res = "";
+    for (int i = 0; i < n; i++) {
+        res += (isHit[uint(i)] ? "\\$fff" : "\\$ccc") + name.SubStr(i, 1);
+    }
+    return res;
+}
+
+void SortMatchArrays(array<string>@ names,
+                     array<uint>@   idxs,
+                     array<int>@    firstPos,
+                     array<string>@ lowerNames,
+                     array<string>@ labels)
+{
     for (uint i = 1; i < names.Length; i++) {
         string kName = names[i];
         string kLow  = lowerNames[i];
@@ -151,6 +134,125 @@ void FindMatches(const string  &in  query,
     }
 }
 
+int BuildColoredLabelAndFirstPos(const string &in name, const string &in query, string &out label) {
+    int qn = int(query.Length);
+    if (qn <= 0) { label = "\\$ccc" + name; return 0; }
+
+    string lname = name.ToLower();
+    string lq = query.ToLower();
+
+    int firstPos = -1;
+    int cursor = 0;
+    label = "";
+
+    while (true) {
+        int pos = FindNext(lname, lq, cursor);
+        if (pos < 0) break;
+
+        if (firstPos < 0) firstPos = pos;
+        if (pos > cursor) { label += "\\$ccc" + name.SubStr(cursor, pos - cursor); }
+
+        label += "\\$fff" + name.SubStr(pos, qn);
+        cursor = pos + qn;
+    }
+
+    if (cursor < int(name.Length)) { label += "\\$ccc" + name.SubStr(cursor); }
+    if (firstPos < 0) { label = "\\$ccc" + name; }
+
+    return firstPos;
+}
+
+void FindMatches(const string  &in  query,
+                 array<string> &out names,
+                 array<uint>   &out idxs,
+                 array<int>    &out firstPos,
+                 array<string> &out lowerNames,
+                 array<string> &out labels)
+{
+    names.RemoveRange(0, names.Length);
+    idxs.RemoveRange(0, idxs.Length);
+    firstPos.RemoveRange(0, firstPos.Length);
+    lowerNames.RemoveRange(0, lowerNames.Length);
+    labels.RemoveRange(0, labels.Length);
+
+    array<string> n_sub, n_init, l_sub, l_init, lbl_sub, lbl_init;
+    array<uint>   i_sub, i_init;
+    array<int>    p_sub, p_init;
+
+    string lq            = query.ToLower();
+    string lqNoSpaces    = LowerNoSpaces(query);
+    bool   hasQuery      = (query.Length > 0);
+    bool   hasQueryNoSp  = (lqNoSpaces.Length > 0);
+
+    for (uint i = 0; i < g_Plugins.Length; i++) {
+        Meta::Plugin@ p = g_Plugins[i];
+        string name = p.Name;
+        string low  = name.ToLower();
+
+        if (!hasQuery) {
+            n_sub.InsertLast(name);
+            i_sub.InsertLast(i);
+            p_sub.InsertLast(0);
+            l_sub.InsertLast(low);
+            lbl_sub.InsertLast("\\$ccc" + name);
+            continue;
+        }
+
+        int pos = -1;
+        for (int start = 0; start <= int(low.Length) - int(lq.Length); start++) {
+            if (low.SubStr(start, int(lq.Length)) == lq) { pos = start; break; }
+        }
+
+        if (pos >= 0) {
+            string lbl;
+            int first = BuildColoredLabelAndFirstPos(name, query, lbl);
+            n_sub.InsertLast(name);
+            i_sub.InsertLast(i);
+            p_sub.InsertLast(first);
+            l_sub.InsertLast(low);
+            lbl_sub.InsertLast(lbl);
+            continue;
+        }
+
+        if (hasQueryNoSp) {
+            string initials;
+            array<int> initPos;
+            BuildInitials(name, initials, initPos);
+            string il = initials.ToLower();
+
+            if (int(il.Length) >= int(lqNoSpaces.Length) && il.SubStr(0, int(lqNoSpaces.Length)) == lqNoSpaces) {
+                string lbl2 = BuildLabelFromPositions(name, initPos, int(lqNoSpaces.Length));
+                int firstIdx = (initPos.Length > 0 ? initPos[0] : 0);
+
+                n_init.InsertLast(name);
+                i_init.InsertLast(i);
+                p_init.InsertLast(firstIdx);
+                l_init.InsertLast(low);
+                lbl_init.InsertLast(lbl2);
+                continue;
+            }
+        }
+    }
+
+    SortMatchArrays(@n_sub, @i_sub, @p_sub, @l_sub, @lbl_sub);
+    SortMatchArrays(@n_init, @i_init, @p_init, @l_init, @lbl_init);
+
+    for (uint k = 0; k < n_sub.Length; k++) {
+        names.InsertLast(n_sub[k]);
+        idxs.InsertLast(i_sub[k]);
+        firstPos.InsertLast(p_sub[k]);
+        lowerNames.InsertLast(l_sub[k]);
+        labels.InsertLast(lbl_sub[k]);
+    }
+    for (uint k = 0; k < n_init.Length; k++) {
+        names.InsertLast(n_init[k]);
+        idxs.InsertLast(i_init[k]);
+        firstPos.InsertLast(p_init[k]);
+        lowerNames.InsertLast(l_init[k]);
+        labels.InsertLast(lbl_init[k]);
+    }
+}
+
 Meta::Plugin@ ResolveTarget(const string &in query) {
     array<string> names;
     array<string> lowerNames;
@@ -171,7 +273,7 @@ Meta::Plugin@ ResolveTarget(const string &in query) {
 
 void TryOpen() {
     Meta::Plugin@ target = ResolveTarget(g_Query);
-    if (target is null) { log("Ambiguous or no match for: ' + g_Query + '", LogLevel::Warn, 174, "TryOpen"); return; }
+    if (target is null) { log("Ambiguous or no match for: '" + g_Query + "'", LogLevel::Warn, 276, "TryOpen"); return; }
     Meta::OpenSettings(target);
 }
 
@@ -242,7 +344,10 @@ void RenderMenuMain() {
             }
         }
 
-        if (submitted || goClicked) TryOpenUsingSelectionOrQuery(idxs);
+        if (submitted || goClicked) {
+            TryOpenUsingSelectionOrQuery(idxs);
+            if (submitted) g_FocusNextFrame = true;
+        }
 
         UI::Dummy(vec2(0, 4));
 
