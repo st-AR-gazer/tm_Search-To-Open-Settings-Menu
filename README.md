@@ -1,35 +1,4 @@
 ![Signed](https://img.shields.io/badge/Signed-No-FF3333)
 ![Trackmania2020](https://img.shields.io/badge/Game-Trackmania-blue)
 
-# Title
-
-[dec]
-
-## Overview
-
-[ove]
-
-## Features
-
-
-- **Point n:** 
-
-## ⚠️ Important Notes
-
-1. **Point 1 - Limitations:** 
-2. **Point 2:**
-3. **Point 3:**
-
-## Prerequisites
-
-- [Trackmania](http://trackmania.com/) game installed
-
-## How It Works
-
-- **Point 1:**
-- **Point 2:**
-- **Point 3:**
-
-## Credits
-
-- **Authors:** ar..... / AR_-_
+A small plugin I made in a bit over an hour to fix an issue that has been bugging me since forever :xdd:, just a simple way to find the settings page of any plugin without having to search through the openplanet settings table. Should be very useful if you have TONS of plugins installed, like me :xdd:
