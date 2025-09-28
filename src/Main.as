@@ -17,6 +17,30 @@ const bool ALPHA_PRIMARY = true;
 const int BUFFER_ROWS = 2;
 const float EDGE_MARGIN = 6.0f;
 
+enum RenderMenuMain_Length {
+    Short = 0,
+    Medium = 1,
+    Long = 2
+};
+
+[Setting name="Menu Label Length" category="Render"]
+RenderMenuMain_Length g_MenuLabelLength = RenderMenuMain_Length::Long;
+
+// "\\$cf9" + Icons::Cogs + "\\$z Open Settings by Name##opsn"
+
+string GetMenuLabel() {
+    string icon = "\\$cf9" + Icons::Cogs + "\\$z";
+
+    if (g_MenuLabelLength == RenderMenuMain_Length::Short) {
+        return icon + "##opsn";
+    } else if (g_MenuLabelLength == RenderMenuMain_Length::Medium) {
+        return icon + " OSN##opsn";
+    } else {
+        return icon + " Open Settings by Name##opsn";
+    }
+}
+
+
 // Utils
 
 void RefreshPlugins(bool force = false) {
@@ -273,7 +297,7 @@ Meta::Plugin@ ResolveTarget(const string &in query) {
 
 void TryOpen() {
     Meta::Plugin@ target = ResolveTarget(g_Query);
-    if (target is null) { log("Ambiguous or no match for: '" + g_Query + "'", LogLevel::Warn, 276, "TryOpen"); return; }
+    if (target is null) { log("Ambiguous or no match for: '" + g_Query + "'", LogLevel::Warn, 300, "TryOpen"); return; }
     Meta::OpenSettings(target);
 }
 
@@ -296,7 +320,7 @@ void OnInputCB(UI::InputTextCallbackData@ data) {
 // Render
 
 void RenderMenuMain() {
-    if (UI::BeginMenu("\\$cf9" + Icons::Cogs + "\\$z Open Settings by Name##opsn")) {
+    if (UI::BeginMenu(GetMenuLabel())) {
         if (!g_MenuWasOpen) g_FocusNextFrame = true;
         g_MenuWasOpen = true;
 
@@ -313,10 +337,6 @@ void RenderMenuMain() {
 
         bool submitted = false;
         g_Query = UI::InputText("###opsn.query", g_Query, submitted, flags, UI::InputTextCallback(OnInputCB));
-
-        bool goClicked = false;
-        UI::SameLine();
-        if (UI::Button(Icons::AngleRight + "##opsn.go")) goClicked = true;
 
         UI::Dummy(vec2(0, 3));
         UI::TextDisabled("["+Icons::ArrowDown+"/"+Icons::ArrowUp+"] select  *  [Enter] open  *  [Click] open");
@@ -344,7 +364,7 @@ void RenderMenuMain() {
             }
         }
 
-        if (submitted || goClicked) {
+        if (submitted) {
             TryOpenUsingSelectionOrQuery(idxs);
             if (submitted) g_FocusNextFrame = true;
         }
