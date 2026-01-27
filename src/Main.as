@@ -336,7 +336,7 @@ void RenderMenuMain() {
                   | UI::InputTextFlags::CallbackHistory;
 
         bool submitted = false;
-        g_Query = UI::InputText("###opsn.query", g_Query, submitted, flags, UI::InputTextCallback(OnInputCB));
+        g_Query = UI::InputText("###opsn.query", g_Query, submitted, flags, OnInputCB);
 
         UI::Dummy(vec2(0, 3));
         UI::TextDisabled("["+Icons::ArrowDown+"/"+Icons::ArrowUp+"] select  *  [Enter] open  *  [Click] open");
