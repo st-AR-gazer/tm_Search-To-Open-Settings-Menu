@@ -1,30 +1,46 @@
 string g_Query = "";
 bool g_FocusNextFrame = false;
 bool g_MenuWasOpen = false;
-
+bool g_OpenMenuNextFrame = false;
+bool g_WaitOneFrameBeforeOpen = false;
+bool g_HotkeyFirstKeyDown = false;
+VirtualKey g_TrackedHotkeyFirstKey = VirtualKey::None;
 array<Meta::Plugin@> g_Plugins;
 uint g_LastRefreshTime = 0;
 const uint REFRESH_MS = 2000;
+const int RESULT_TARGET_PLUGIN = 0;
+const int RESULT_TARGET_TOGGLE = 1;
+const int RESULT_TARGET_RELOAD = 2;
 
 int g_SelectedIndex = -1;
-
+int g_SelectedTarget = RESULT_TARGET_PLUGIN;
 int g_NavDelta = 0;
-
 int g_PendingScrollSteps = 0;
 int g_PendingScrollStartIdx = -1;
 
 const bool ALPHA_PRIMARY = true;
 const int BUFFER_ROWS = 2;
 const float EDGE_MARGIN = 6.0f;
+const float MENU_WIDTH = 450.0f;
+const float ACTIONS_COLUMN_WIDTH = 76.0f;
+const string ENABLED_COLOR = "\\$ccc";
+const string ENABLED_MATCH_COLOR = "\\$fff";
+const string DISABLED_COLOR = "\\$f66";
+const string DISABLED_MATCH_COLOR = "\\$faa";
 
 enum RenderMenuMain_Length {
     Short = 0,
     Medium = 1,
     Long = 2
-};
+}
+;
 
 [Setting name="Menu Label Length" category="Render"]
 RenderMenuMain_Length g_MenuLabelLength = RenderMenuMain_Length::Long;
+[Setting name="First key" category="Hotkey"]
+VirtualKey g_HotkeyFirstKey = VirtualKey::Control;
+[Setting name="Second key" category="Hotkey"]
+VirtualKey g_HotkeySecondKey = VirtualKey::K;
 
 // "\\$cf9" + Icons::Cogs + "\\$z Open Settings by Name##opsn"
 
@@ -40,7 +56,6 @@ string GetMenuLabel() {
     }
 }
 
-
 // Utils
 
 void RefreshPlugins(bool force = false) {
@@ -50,14 +65,24 @@ void RefreshPlugins(bool force = false) {
     g_LastRefreshTime = now;
 }
 
-int AbsI(int x) { return x < 0 ? -x : x; }
-int ClampI(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
-float ClampF(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+int AbsI(int x) {
+    return x < 0 ? -x : x;
+}
 
-string lower(const string &in s) { return s.ToLower(); }
+int ClampI(int v, int lo, int hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+float ClampF(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+string lower(const string &in s) {
+    return s.ToLower();
+}
 
 int FindNext(const string &in lname, const string &in lq, int start) {
-    int n  = int(lname.Length);
+    int n = int(lname.Length);
     int qn = int(lq.Length);
     if (qn <= 0) return start;
     for (int i = start; i <= n - qn; i++) {
@@ -96,7 +121,12 @@ void BuildInitials(const string &in name, string &out initials, array<int> &out 
     }
 }
 
-string BuildLabelFromPositions(const string &in name, const array<int> &in matchPositions, int matchCount) {
+string BuildLabelFromPositions(
+    const string &in name,
+    const array<int> &in matchPositions,
+    int matchCount,
+    bool enabled
+) {
     int n = int(name.Length);
     array<bool> isHit(uint(n));
     for (int k = 0; k < matchCount && k < int(matchPositions.Length); k++) {
@@ -105,25 +135,27 @@ string BuildLabelFromPositions(const string &in name, const array<int> &in match
     }
 
     string res = "";
+    string normalColor = enabled ? ENABLED_COLOR : DISABLED_COLOR;
+    string matchColor = enabled ? ENABLED_MATCH_COLOR : DISABLED_MATCH_COLOR;
     for (int i = 0; i < n; i++) {
-        res += (isHit[uint(i)] ? "\\$fff" : "\\$ccc") + name.SubStr(i, 1);
+        res += (isHit[uint(i)] ? matchColor : normalColor) + name.SubStr(i, 1);
     }
     return res;
 }
 
-void SortMatchArrays(array<string>@ names,
-                     array<uint>@   idxs,
-                     array<int>@    firstPos,
-                     array<string>@ lowerNames,
-                     array<string>@ labels)
-{
+void SortMatchArrays(
+    array<string> @names,
+    array<uint> @idxs,
+    array<int> @firstPos,
+    array<string> @lowerNames,
+    array<string> @labels
+) {
     for (uint i = 1; i < names.Length; i++) {
         string kName = names[i];
-        string kLow  = lowerNames[i];
-        uint   kIdx  = idxs[i];
-        int    kPos  = firstPos[i];
-        string kLbl  = labels[i];
-
+        string kLow = lowerNames[i];
+        uint kIdx = idxs[i];
+        int kPos = firstPos[i];
+        string kLbl = labels[i];
         int j = int(i) - 1;
         while (j >= 0) {
             bool greater = false;
@@ -142,29 +174,32 @@ void SortMatchArrays(array<string>@ names,
             }
             if (!greater) break;
 
-            names[uint(j+1)]      = names[uint(j)];
-            lowerNames[uint(j+1)] = lowerNames[uint(j)];
-            idxs[uint(j+1)]       = idxs[uint(j)];
-            firstPos[uint(j+1)]   = firstPos[uint(j)];
-            labels[uint(j+1)]     = labels[uint(j)];
+            names[uint(j + 1)] = names[uint(j)];
+            lowerNames[uint(j + 1)] = lowerNames[uint(j)];
+            idxs[uint(j + 1)] = idxs[uint(j)];
+            firstPos[uint(j + 1)] = firstPos[uint(j)];
+            labels[uint(j + 1)] = labels[uint(j)];
             j--;
         }
-
-        names[uint(j+1)]      = kName;
-        lowerNames[uint(j+1)] = kLow;
-        idxs[uint(j+1)]       = kIdx;
-        firstPos[uint(j+1)]   = kPos;
-        labels[uint(j+1)]     = kLbl;
+        names[uint(j + 1)] = kName;
+        lowerNames[uint(j + 1)] = kLow;
+        idxs[uint(j + 1)] = kIdx;
+        firstPos[uint(j + 1)] = kPos;
+        labels[uint(j + 1)] = kLbl;
     }
 }
 
-int BuildColoredLabelAndFirstPos(const string &in name, const string &in query, string &out label) {
+int BuildColoredLabelAndFirstPos(const string &in name, const string &in query, bool enabled, string &out label) {
+    string normalColor = enabled ? ENABLED_COLOR : DISABLED_COLOR;
+    string matchColor = enabled ? ENABLED_MATCH_COLOR : DISABLED_MATCH_COLOR;
     int qn = int(query.Length);
-    if (qn <= 0) { label = "\\$ccc" + name; return 0; }
+    if (qn <= 0) {
+        label = normalColor + name;
+        return 0;
+    }
 
     string lname = name.ToLower();
     string lq = query.ToLower();
-
     int firstPos = -1;
     int cursor = 0;
     label = "";
@@ -174,62 +209,67 @@ int BuildColoredLabelAndFirstPos(const string &in name, const string &in query, 
         if (pos < 0) break;
 
         if (firstPos < 0) firstPos = pos;
-        if (pos > cursor) { label += "\\$ccc" + name.SubStr(cursor, pos - cursor); }
-
-        label += "\\$fff" + name.SubStr(pos, qn);
+        if (pos > cursor) {
+            label += normalColor + name.SubStr(cursor, pos - cursor);
+        }
+        label += matchColor + name.SubStr(pos, qn);
         cursor = pos + qn;
     }
-
-    if (cursor < int(name.Length)) { label += "\\$ccc" + name.SubStr(cursor); }
-    if (firstPos < 0) { label = "\\$ccc" + name; }
+    if (cursor < int(name.Length)) {
+        label += normalColor + name.SubStr(cursor);
+    }
+    if (firstPos < 0) {
+        label = normalColor + name;
+    }
 
     return firstPos;
 }
 
-void FindMatches(const string  &in  query,
-                 array<string> &out names,
-                 array<uint>   &out idxs,
-                 array<int>    &out firstPos,
-                 array<string> &out lowerNames,
-                 array<string> &out labels)
-{
+void FindMatches(
+    const string &in query,
+    array<string> &out names,
+    array<uint> &out idxs,
+    array<int> &out firstPos,
+    array<string> &out lowerNames,
+    array<string> &out labels
+) {
     names.RemoveRange(0, names.Length);
     idxs.RemoveRange(0, idxs.Length);
     firstPos.RemoveRange(0, firstPos.Length);
     lowerNames.RemoveRange(0, lowerNames.Length);
     labels.RemoveRange(0, labels.Length);
-
     array<string> n_sub, n_init, l_sub, l_init, lbl_sub, lbl_init;
-    array<uint>   i_sub, i_init;
-    array<int>    p_sub, p_init;
-
-    string lq            = query.ToLower();
-    string lqNoSpaces    = LowerNoSpaces(query);
-    bool   hasQuery      = (query.Length > 0);
-    bool   hasQueryNoSp  = (lqNoSpaces.Length > 0);
+    array<uint> i_sub, i_init;
+    array<int> p_sub, p_init;
+    string lq = query.ToLower();
+    string lqNoSpaces = LowerNoSpaces(query);
+    bool hasQuery = (query.Length > 0);
+    bool hasQueryNoSp = (lqNoSpaces.Length > 0);
 
     for (uint i = 0; i < g_Plugins.Length; i++) {
         Meta::Plugin@ p = g_Plugins[i];
         string name = p.Name;
-        string low  = name.ToLower();
+        string low = name.ToLower();
 
         if (!hasQuery) {
             n_sub.InsertLast(name);
             i_sub.InsertLast(i);
             p_sub.InsertLast(0);
             l_sub.InsertLast(low);
-            lbl_sub.InsertLast("\\$ccc" + name);
+            lbl_sub.InsertLast((p.Enabled ? ENABLED_COLOR : DISABLED_COLOR) + name);
             continue;
         }
 
         int pos = -1;
         for (int start = 0; start <= int(low.Length) - int(lq.Length); start++) {
-            if (low.SubStr(start, int(lq.Length)) == lq) { pos = start; break; }
+            if (low.SubStr(start, int(lq.Length)) == lq) {
+                pos = start;
+                break;
+            }
         }
-
         if (pos >= 0) {
             string lbl;
-            int first = BuildColoredLabelAndFirstPos(name, query, lbl);
+            int first = BuildColoredLabelAndFirstPos(name, query, p.Enabled, lbl);
             n_sub.InsertLast(name);
             i_sub.InsertLast(i);
             p_sub.InsertLast(first);
@@ -243,11 +283,9 @@ void FindMatches(const string  &in  query,
             array<int> initPos;
             BuildInitials(name, initials, initPos);
             string il = initials.ToLower();
-
             if (int(il.Length) >= int(lqNoSpaces.Length) && il.SubStr(0, int(lqNoSpaces.Length)) == lqNoSpaces) {
-                string lbl2 = BuildLabelFromPositions(name, initPos, int(lqNoSpaces.Length));
+                string lbl2 = BuildLabelFromPositions(name, initPos, int(lqNoSpaces.Length), p.Enabled);
                 int firstIdx = (initPos.Length > 0 ? initPos[0] : 0);
-
                 n_init.InsertLast(name);
                 i_init.InsertLast(i);
                 p_init.InsertLast(firstIdx);
@@ -257,7 +295,6 @@ void FindMatches(const string  &in  query,
             }
         }
     }
-
     SortMatchArrays(@n_sub, @i_sub, @p_sub, @l_sub, @lbl_sub);
     SortMatchArrays(@n_init, @i_init, @p_init, @l_init, @lbl_init);
 
@@ -281,9 +318,8 @@ Meta::Plugin@ ResolveTarget(const string &in query) {
     array<string> names;
     array<string> lowerNames;
     array<string> labels;
-    array<uint>   idxs;
-    array<int>    firstPos;
-
+    array<uint> idxs;
+    array<int> firstPos;
     FindMatches(query, names, idxs, firstPos, lowerNames, labels);
     if (names.Length == 0) return null;
 
@@ -297,63 +333,140 @@ Meta::Plugin@ ResolveTarget(const string &in query) {
 
 void TryOpen() {
     Meta::Plugin@ target = ResolveTarget(g_Query);
-    if (target is null) { log("Ambiguous or no match for: '" + g_Query + "'", LogLevel::Warn, 300, "TryOpen"); return; }
+    if (target is null) {
+        log("Ambiguous or no match for: '" + g_Query + "'", LogLevel::Warn, 300, "TryOpen");
+        return;
+    }
     Meta::OpenSettings(target);
 }
 
-void TryOpenUsingSelectionOrQuery(const array<uint>@ idxs) {
+void ActivateSelectedResult(const array<uint> @idxs) {
     if (g_SelectedIndex >= 0 && g_SelectedIndex < int(idxs.Length)) {
         Meta::Plugin@ target = g_Plugins[idxs[uint(g_SelectedIndex)]];
-        Meta::OpenSettings(target);
+        if (g_SelectedTarget == RESULT_TARGET_TOGGLE) {
+            g_LastRefreshTime = 0;
+            target.Enabled = !target.Enabled;
+        } else if (g_SelectedTarget == RESULT_TARGET_RELOAD) {
+            g_LastRefreshTime = 0;
+            Meta::ReloadPlugin(target);
+        } else {
+            Meta::OpenSettings(target);
+        }
         return;
     }
     TryOpen();
 }
 
+void PushSelectedActionStyle() {
+    UI::PushStyleColor(UI::Col::Button, vec4(0.95f, 0.55f, 0.12f, 0.90f));
+    UI::PushStyleColor(UI::Col::ButtonHovered, vec4(1.00f, 0.65f, 0.18f, 1.00f));
+    UI::PushStyleColor(UI::Col::ButtonActive, vec4(0.85f, 0.42f, 0.08f, 1.00f));
+}
+
 void OnInputCB(UI::InputTextCallbackData@ data) {
     if (data.EventFlag == UI::InputTextFlags::CallbackHistory) {
-        if (data.EventKey == UI::Key::UpArrow)   g_NavDelta += -1;
+        if (data.EventKey == UI::Key::UpArrow) g_NavDelta += -1;
         if (data.EventKey == UI::Key::DownArrow) g_NavDelta += +1;
     }
+}
+
+bool IsVirtualKeyMatch(VirtualKey key, VirtualKey configuredKey) {
+    if (key == configuredKey) return true;
+
+    if (configuredKey == VirtualKey::Shift) {
+        return key == VirtualKey::LShift || key == VirtualKey::RShift;
+    }
+    if (configuredKey == VirtualKey::Control) {
+        return key == VirtualKey::LControl || key == VirtualKey::RControl;
+    }
+    if (configuredKey == VirtualKey::Menu) {
+        return key == VirtualKey::LMenu || key == VirtualKey::RMenu;
+    }
+
+    return false;
+}
+
+UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
+    if (g_TrackedHotkeyFirstKey != g_HotkeyFirstKey) {
+        g_TrackedHotkeyFirstKey = g_HotkeyFirstKey;
+        g_HotkeyFirstKeyDown = false;
+    }
+    if (IsVirtualKeyMatch(key, g_HotkeyFirstKey)) {
+        g_HotkeyFirstKeyDown = down;
+    }
+
+    bool hotkeyEnabled = g_HotkeyFirstKey != VirtualKey::None
+        && g_HotkeySecondKey != VirtualKey::None;
+    bool secondKeyPressed = down && IsVirtualKeyMatch(key, g_HotkeySecondKey);
+    if (hotkeyEnabled && secondKeyPressed && g_HotkeyFirstKeyDown) {
+        g_OpenMenuNextFrame = true;
+        g_WaitOneFrameBeforeOpen = true;
+        g_FocusNextFrame = true;
+        UI::ShowOverlay();
+        return UI::InputBlocking::Block;
+    }
+
+    return UI::InputBlocking::DoNothing;
 }
 
 // Render
 
 void RenderMenuMain() {
+    if (g_OpenMenuNextFrame) {
+        if (g_WaitOneFrameBeforeOpen) {
+            g_WaitOneFrameBeforeOpen = false;
+        } else if (UI::IsOverlayShown()) {
+            UI::OpenPopup(GetMenuLabel());
+            g_OpenMenuNextFrame = false;
+        }
+    }
+
     if (UI::BeginMenu(GetMenuLabel())) {
-        if (!g_MenuWasOpen) g_FocusNextFrame = true;
+        if (!g_MenuWasOpen) {
+            g_FocusNextFrame = true;
+            g_SelectedTarget = RESULT_TARGET_PLUGIN;
+        }
         g_MenuWasOpen = true;
-
         RefreshPlugins();
-
-        UI::SetNextItemWidth(360);
-        if (g_FocusNextFrame) { UI::SetKeyboardFocusHere(); g_FocusNextFrame = false; }
+        UI::SetNextItemWidth(MENU_WIDTH);
+        if (g_FocusNextFrame) {
+            UI::SetKeyboardFocusHere();
+            g_FocusNextFrame = false;
+        }
 
         string prevQuery = g_Query;
-
         int flags = UI::InputTextFlags::AutoSelectAll
-                  | UI::InputTextFlags::EnterReturnsTrue
-                  | UI::InputTextFlags::CallbackHistory;
-
+            | UI::InputTextFlags::EnterReturnsTrue
+            | UI::InputTextFlags::CallbackHistory;
         bool submitted = false;
         g_Query = UI::InputText("###opsn.query", g_Query, submitted, flags, OnInputCB);
 
+        if (g_SelectedIndex >= 0) {
+            if (UI::IsKeyPressed(UI::Key::LeftArrow)) {
+                g_SelectedTarget = Math::Max(RESULT_TARGET_PLUGIN, g_SelectedTarget - 1);
+            }
+            if (UI::IsKeyPressed(UI::Key::RightArrow)) {
+                g_SelectedTarget = Math::Min(RESULT_TARGET_RELOAD, g_SelectedTarget + 1);
+            }
+        }
         UI::Dummy(vec2(0, 3));
-        UI::TextDisabled("["+Icons::ArrowDown+"/"+Icons::ArrowUp+"] select  *  [Enter] open  *  [Click] open");
-
+        UI::TextDisabled("[" + Icons::ArrowDown + "/" + Icons::ArrowUp + "] row  *  [" + Icons::ArrowLeft + "/" + Icons::ArrowRight + "] action  *  [Enter] use");
+        UI::Text(DISABLED_COLOR + "Disabled plugins\\$z  *  [" + Icons::ToggleOn + "] toggle  *  [" + Icons::Refresh + "] reload");
         array<string> names;
         array<string> labels;
         array<string> lowerNames;
-        array<uint>   idxs;
-        array<int>    fpos;
+        array<uint> idxs;
+        array<int> fpos;
         FindMatches(g_Query, names, idxs, fpos, lowerNames, labels);
+        if (g_Query != prevQuery) {
+            g_SelectedIndex = -1;
+            g_SelectedTarget = RESULT_TARGET_PLUGIN;
+        }
 
-        if (g_Query != prevQuery) g_SelectedIndex = -1;
-
-        int steps = g_NavDelta; g_NavDelta = 0;
-        g_PendingScrollSteps    = steps;
+        int steps = g_NavDelta;
+        g_NavDelta = 0;
+        g_PendingScrollSteps = steps;
         g_PendingScrollStartIdx = g_SelectedIndex;
-
         int remaining = AbsI(steps);
         int sgn = (steps > 0) ? +1 : (steps < 0 ? -1 : 0);
         while (remaining-- > 0 && names.Length > 0) {
@@ -363,24 +476,20 @@ void RenderMenuMain() {
                 g_SelectedIndex = (g_SelectedIndex + sgn + int(names.Length)) % int(names.Length);
             }
         }
-
         if (submitted) {
-            TryOpenUsingSelectionOrQuery(idxs);
-            if (submitted) g_FocusNextFrame = true;
+            ActivateSelectedResult(idxs);
+            g_FocusNextFrame = true;
         }
-
         UI::Dummy(vec2(0, 4));
-
         const int MAX_VISIBLE_ROWS = 10;
         float rowHguess = UI::GetFrameHeightWithSpacing();
         float pad = 6.0f;
         float maxH = Math::Min(MAX_VISIBLE_ROWS * rowHguess + pad, 260.0f);
         float desiredH = names.Length > 0 ? Math::Min(maxH, names.Length * rowHguess + pad) : rowHguess + pad;
-
         UI::TextDisabled(Icons::List + "  Matches (" + names.Length + "):");
         UI::Dummy(vec2(0, 2));
 
-        if (UI::BeginChild("##opsn.matches", vec2(360, desiredH))) {
+        if (UI::BeginChild("##opsn.matches", vec2(MENU_WIDTH, desiredH))) {
             if (names.Length == 0) {
                 g_SelectedIndex = -1;
             } else if (g_SelectedIndex >= int(names.Length)) {
@@ -394,27 +503,56 @@ void RenderMenuMain() {
             rowEndY.Resize(names.Length);
             rowHeight.Resize(names.Length);
 
-            for (uint i = 0; i < names.Length; i++) {
-                float startY = UI::GetCursorPos().y;
+            if (UI::BeginTable("##opsn.results", 2, UI::TableFlags::SizingStretchProp)) {
+                UI::TableSetupColumn("Plugin", UI::TableColumnFlags::WidthStretch);
+                UI::TableSetupColumn("Actions", UI::TableColumnFlags::WidthFixed, ACTIONS_COLUMN_WIDTH);
 
-                bool isSel = (int(i) == g_SelectedIndex);
-                string label = labels[i] + "##opsn.item." + i;
+                for (uint i = 0; i < names.Length; i++) {
+                    UI::TableNextRow();
+                    UI::TableSetColumnIndex(0);
+                    float startY = UI::GetCursorPos().y;
+                    bool isSel = (int(i) == g_SelectedIndex);
+                    string label = labels[i] + "##opsn.item." + i;
+                    Meta::Plugin@ plugin = g_Plugins[idxs[i]];
+                    if (UI::Selectable(label, isSel && g_SelectedTarget == RESULT_TARGET_PLUGIN)) {
+                        Meta::OpenSettings(plugin);
+                    }
+                    UI::TableSetColumnIndex(1);
+                    bool enabled = plugin.Enabled;
+                    bool toggleSelected = isSel && g_SelectedTarget == RESULT_TARGET_TOGGLE;
+                    if (toggleSelected) PushSelectedActionStyle();
+                    bool togglePressed = UI::Button((enabled ? Icons::ToggleOn : Icons::ToggleOff) + "##opsn.toggle." + i);
+                    if (toggleSelected) UI::PopStyleColor(3);
+                    if (togglePressed) {
+                        g_LastRefreshTime = 0;
+                        plugin.Enabled = !enabled;
+                    }
+                    if (UI::IsItemHovered()) UI::SetTooltip(enabled ? "Disable plugin" : "Enable plugin");
 
-                if (UI::Selectable(label, isSel)) Meta::OpenSettings(g_Plugins[idxs[i]]);
+                    UI::SameLine();
+                    bool reloadSelected = isSel && g_SelectedTarget == RESULT_TARGET_RELOAD;
+                    if (reloadSelected) PushSelectedActionStyle();
+                    bool reloadPressed = UI::Button(Icons::Refresh + "##opsn.reload." + i);
+                    if (reloadSelected) UI::PopStyleColor(3);
+                    if (reloadPressed) {
+                        g_LastRefreshTime = 0;
+                        Meta::ReloadPlugin(plugin);
+                    }
+                    if (UI::IsItemHovered()) UI::SetTooltip("Reload plugin");
 
-                float endY = UI::GetCursorPos().y;
-                rowStartY[i] = startY;
-                rowEndY[i]   = endY;
-                rowHeight[i] = Math::Max(0.0f, endY - startY);
+                    float endY = UI::GetCursorPos().y;
+                    rowStartY[i] = startY;
+                    rowEndY[i] = endY;
+                    rowHeight[i] = Math::Max(0.0f, endY - startY);
+                }
+                UI::EndTable();
             }
-
             if (g_PendingScrollSteps != 0 && names.Length > 0) {
                 int idxStart = g_PendingScrollStartIdx;
-                int count    = AbsI(g_PendingScrollSteps);
-                int d        = (g_PendingScrollSteps > 0) ? +1 : -1;
-
+                int count = AbsI(g_PendingScrollSteps);
+                int d = (g_PendingScrollSteps > 0) ? +1 :-1;
                 float scrollY = UI::GetScrollY();
-                float viewH   = UI::GetWindowSize().y;
+                float viewH = UI::GetWindowSize().y;
 
                 for (int s = 0; s < count; s++) {
                     if (idxStart < 0) {
@@ -422,11 +560,9 @@ void RenderMenuMain() {
                     } else {
                         idxStart = (idxStart + d + int(names.Length)) % int(names.Length);
                     }
-
                     if (d > 0) {
                         int bufIdx = ClampI(idxStart + BUFFER_ROWS, 0, int(names.Length) - 1);
                         float safeBottom = scrollY + viewH - EDGE_MARGIN;
-
                         if (rowEndY[bufIdx] > safeBottom) {
                             float delta = rowHeight[bufIdx];
                             scrollY = Math::Min(scrollY + delta, UI::GetScrollMaxY());
@@ -435,7 +571,6 @@ void RenderMenuMain() {
                     } else {
                         int bufIdx = ClampI(idxStart - BUFFER_ROWS, 0, int(names.Length) - 1);
                         float safeTop = scrollY + EDGE_MARGIN;
-
                         if (rowStartY[bufIdx] < safeTop) {
                             float delta = rowHeight[bufIdx];
                             scrollY = Math::Max(scrollY - delta, 0.0f);
@@ -449,26 +584,23 @@ void RenderMenuMain() {
             bool movedByKeysThisFrame = (g_PendingScrollStartIdx != g_SelectedIndex);
             if (movedByKeysThisFrame && names.Length > 0 && g_SelectedIndex >= 0) {
                 float scrollY = UI::GetScrollY();
-                float viewH   = UI::GetWindowSize().y;
-                float topLim  = scrollY + EDGE_MARGIN;
-                float botLim  = scrollY + viewH - EDGE_MARGIN;
-
-                float selTop  = rowStartY[uint(g_SelectedIndex)];
-                float selBot  = rowEndY[uint(g_SelectedIndex)];
-
+                float viewH = UI::GetWindowSize().y;
+                float topLim = scrollY + EDGE_MARGIN;
+                float botLim = scrollY + viewH - EDGE_MARGIN;
+                float selTop = rowStartY[uint(g_SelectedIndex)];
+                float selBot = rowEndY[uint(g_SelectedIndex)];
                 if (selTop < topLim) {
-                    int bufIdx   = ClampI(g_SelectedIndex - BUFFER_ROWS, 0, int(names.Length) - 1);
+                    int bufIdx = ClampI(g_SelectedIndex - BUFFER_ROWS, 0, int(names.Length) - 1);
                     float target = rowStartY[uint(bufIdx)] - EDGE_MARGIN;
                     float snapped = Math::Max(0.0f, Math::Min(target, UI::GetScrollMaxY()));
                     UI::SetScrollY(snapped);
                 } else if (selBot > botLim) {
-                    int bufIdx   = ClampI(g_SelectedIndex + BUFFER_ROWS, 0, int(names.Length) - 1);
+                    int bufIdx = ClampI(g_SelectedIndex + BUFFER_ROWS, 0, int(names.Length) - 1);
                     float target = rowEndY[uint(bufIdx)] - viewH + EDGE_MARGIN;
                     float snapped = Math::Max(0.0f, Math::Min(target, UI::GetScrollMaxY()));
                     UI::SetScrollY(snapped);
                 }
             }
-
             if (names.Length == 0) UI::TextDisabled(Icons::Times + "  No matches");
         }
         UI::EndChild();
