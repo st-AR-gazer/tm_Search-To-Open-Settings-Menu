@@ -10,7 +10,8 @@ uint g_LastRefreshTime = 0;
 const uint REFRESH_MS = 2000;
 const int RESULT_TARGET_PLUGIN = 0;
 const int RESULT_TARGET_TOGGLE = 1;
-const int RESULT_TARGET_RELOAD = 2;
+const int RESULT_TARGET_OPENEXTERNAL = 2;
+const int RESULT_TARGET_RELOAD = 3;
 
 int g_SelectedIndex = -1;
 int g_SelectedTarget = RESULT_TARGET_PLUGIN;
@@ -22,7 +23,7 @@ const bool ALPHA_PRIMARY = true;
 const int BUFFER_ROWS = 2;
 const float EDGE_MARGIN = 6.0f;
 const float MENU_WIDTH = 450.0f;
-const float ACTIONS_COLUMN_WIDTH = 76.0f;
+const float ACTIONS_COLUMN_WIDTH = 120.0f;
 const string ENABLED_COLOR = "\\$ccc";
 const string ENABLED_MATCH_COLOR = "\\$fff";
 const string DISABLED_COLOR = "\\$f66";
@@ -346,6 +347,8 @@ void ActivateSelectedResult(const array<uint> @idxs) {
         if (g_SelectedTarget == RESULT_TARGET_TOGGLE) {
             g_LastRefreshTime = 0;
             target.Enabled = !target.Enabled;
+        } else if (g_SelectedTarget == RESULT_TARGET_OPENEXTERNAL) {
+            OpenBrowserURL("https://openplanet.dev/plugin/" + target.ID);
         } else if (g_SelectedTarget == RESULT_TARGET_RELOAD) {
             g_LastRefreshTime = 0;
             Meta::ReloadPlugin(target);
@@ -451,7 +454,7 @@ void RenderMenuMain() {
         }
         UI::Dummy(vec2(0, 3));
         UI::TextDisabled("[" + Icons::ArrowDown + "/" + Icons::ArrowUp + "] row  *  [" + Icons::ArrowLeft + "/" + Icons::ArrowRight + "] action  *  [Enter] use");
-        UI::Text(DISABLED_COLOR + "Disabled plugins\\$z  *  [" + Icons::ToggleOn + "] toggle  *  [" + Icons::Refresh + "] reload");
+        UI::Text(DISABLED_COLOR + "Disabled plugins\\$z  *  [" + Icons::ToggleOn + "] toggle  *  [" + Icons::ExternalLink + "] plugin page  *  [" + Icons::Refresh + "] reload");
         array<string> names;
         array<string> labels;
         array<string> lowerNames;
@@ -528,6 +531,14 @@ void RenderMenuMain() {
                         plugin.Enabled = !enabled;
                     }
                     if (UI::IsItemHovered()) UI::SetTooltip(enabled ? "Disable plugin" : "Enable plugin");
+
+                    UI::SameLine();
+                    bool openSelected = isSel && g_SelectedTarget == RESULT_TARGET_OPENEXTERNAL;
+                    if (openSelected) PushSelectedActionStyle();
+                    bool openPressed = UI::Button(Icons::ExternalLink + "##opsn.open." + i);
+                    if (openSelected) UI::PopStyleColor(3);
+                    if (openPressed) OpenBrowserURL("https://openplanet.dev/plugin/" + plugin.ID);
+                    if (UI::IsItemHovered()) UI::SetTooltip("Open plugin page");
 
                     UI::SameLine();
                     bool reloadSelected = isSel && g_SelectedTarget == RESULT_TARGET_RELOAD;
